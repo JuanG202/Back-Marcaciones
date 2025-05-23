@@ -1,0 +1,21 @@
+# dependencies
+/node_modules
+
+# environment variables
+.env
+
+# credentials
+credentials.json
+*.json.key
+*.p12
+*.pem
+
+# local files
+marcaciones.xlsx
+
+# logs
+*.log
+
+# IDE files
+.vscode/
+.idea/ 
