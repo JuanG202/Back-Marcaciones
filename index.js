@@ -17,22 +17,7 @@ if (!fs.existsSync(process.env.CREDENTIALS_PATH || 'credentials.json')) {
 }
 
 const app = express();
-
-// Configuración básica de CORS
 app.use(cors());
-
-// Middleware para asegurar los headers CORS
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
-
 app.use(bodyParser.json());
 
 // Configuración de archivos
@@ -69,6 +54,7 @@ function guardarEnExcel(datos) {
     XLSX.writeFile(nuevoLibro, EXCEL_PATH);
     console.log('Archivo Excel guardado exitosamente');
     
+    // Verificar que el archivo se creó correctamente
     if (!fs.existsSync(EXCEL_PATH)) {
       throw new Error('El archivo no se guardó correctamente');
     }
@@ -85,6 +71,7 @@ function guardarEnExcel(datos) {
 // Función para verificar si la carpeta existe
 async function verificarCarpeta(drive, carpetaId) {
   try {
+    // Intentar obtener la carpeta específica
     const response = await drive.files.get({
       fileId: carpetaId,
       fields: 'id, name'
@@ -100,6 +87,7 @@ async function verificarCarpeta(drive, carpetaId) {
 async function crearOEncontrarCarpeta(drive) {
   console.log('Buscando carpeta "Marcaciones" en Drive...');
   
+  // Primero buscar si ya existe una carpeta llamada "Marcaciones"
   const busqueda = await drive.files.list({
     q: "mimeType='application/vnd.google-apps.folder' and name='Marcaciones' and trashed=false",
     fields: 'files(id, name, webViewLink)',
@@ -112,6 +100,7 @@ async function crearOEncontrarCarpeta(drive) {
     return carpeta;
   }
 
+  // Si no existe, crear nueva carpeta
   console.log('Creando nueva carpeta "Marcaciones"...');
   const fileMetadata = {
     name: 'Marcaciones',
@@ -123,6 +112,7 @@ async function crearOEncontrarCarpeta(drive) {
     fields: 'id, name, webViewLink'
   });
 
+  // Hacer la carpeta pública y compartirla
   await drive.permissions.create({
     fileId: carpeta.data.id,
     requestBody: {
@@ -150,7 +140,7 @@ async function subirArchivoAGoogleDrive() {
 
   const drive = google.drive({ version: 'v3', auth });
   
-  // ID del archivo Excel en Drive (reemplaza con el correcto)
+  // ID del archivo Excel en Drive
   const EXCEL_DRIVE_ID = '1mNYuHeBH0ODc4m8ajDTdjPBqkDDG7_hR';
   
   console.log('Actualizando archivo Excel en Drive...');
@@ -160,6 +150,7 @@ async function subirArchivoAGoogleDrive() {
   };
 
   try {
+    // Intentar actualizar el archivo existente
     const actualizado = await drive.files.update({
       fileId: EXCEL_DRIVE_ID,
       media,
@@ -184,10 +175,12 @@ function combinarFechaConHoraActual(fecha) {
   const ahora = new Date();
   const fechaSeleccionada = new Date(fecha);
   
+  // Combinar la fecha seleccionada con la hora actual
   fechaSeleccionada.setHours(ahora.getHours());
   fechaSeleccionada.setMinutes(ahora.getMinutes());
   fechaSeleccionada.setSeconds(ahora.getSeconds());
 
+  // Formatear como fecha y hora
   return fechaSeleccionada.toLocaleString('es-ES', {
     year: 'numeric',
     month: '2-digit',

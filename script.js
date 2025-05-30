@@ -27,7 +27,7 @@ function enviarFormulario() {
 
   console.log('Enviando datos:', datos);
 
-  fetch('https://back-marcaciones.vercel.app/registrar', {
+  fetch('http://localhost:3000/registrar', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -64,7 +64,7 @@ function enviarFormulario() {
 
 // Función para cargar y mostrar registros (opcional)
 function cargarRegistros() {
-  fetch('https://back-marcaciones.vercel.app/registros')
+  fetch('http://localhost:3000/registros')
     .then(response => response.json())
     .then(data => {
       console.log('Registros cargados:', data);
