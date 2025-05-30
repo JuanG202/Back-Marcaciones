@@ -7,201 +7,181 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// =============================================
-// Configuración inicial y verificación
-// =============================================
-
-console.log('Iniciando servidor de marcaciones...');
+// Verificación inicial de configuración
 console.log('Verificando configuración...');
-
-// Verificar variables de entorno esenciales
-const REQUIRED_ENV = ['CARPETA_DRIVE_ID', 'CREDENTIALS_PATH'];
-REQUIRED_ENV.forEach(env => {
-  if (!process.env[env]) {
-    console.error(`ERROR: Variable de entorno requerida faltante: ${env}`);
-    process.exit(1);
-  }
-});
-
-// Verificar archivo de credenciales
-if (!fs.existsSync(path.join(__dirname, process.env.CREDENTIALS_PATH))) {
-  console.error('ERROR: No se encuentra el archivo credentials.json');
-  process.exit(1);
+if (!process.env.CARPETA_DRIVE_ID) {
+  console.error('Error: CARPETA_DRIVE_ID no está definido en el archivo .env');
 }
-
-// =============================================
-// Configuración de Express y Middlewares
-// =============================================
+if (!fs.existsSync(process.env.CREDENTIALS_PATH || 'credentials.json')) {
+  console.error('Error: No se encuentra el archivo credentials.json');
+}
 
 const app = express();
 
-// Configuración de CORS
-const allowedOrigins = [
-  'https://registro-marcaciones.vercel.app',
-  'http://localhost:3000', // Desarrollo frontend local
-  'https://localhost:3000' // Para desarrollo con HTTPS
-];
+// Configurar CORS para aceptar solo peticiones de tu frontend en Vercel
+app.use(cors({
+  origin: 'https://registro-marcaciones.vercel.app'  // Cambia aquí si tu frontend está en otra URL
+}));
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Origen no permitido por CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-  optionsSuccessStatus: 200
-};
+// Habilitar preflight para todas las rutas (OPTIONS)
+app.options('*', cors());
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Habilitar preflight para todas las rutas
+app.use(bodyParser.json());
 
-// Middlewares para parsear el cuerpo de las peticiones
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-
-// Middleware de logging
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.ip} ${req.method} ${req.path}`);
-  next();
-});
-
-// =============================================
-// Configuración de rutas de archivos
-// =============================================
-
+// Configuración de archivos
 const EXCEL_PATH = path.join(__dirname, process.env.EXCEL_PATH || 'marcaciones.xlsx');
 const CARPETA_DRIVE_ID = process.env.CARPETA_DRIVE_ID;
-const CREDENTIALS_PATH = path.join(__dirname, process.env.CREDENTIALS_PATH);
+const CREDENTIALS_PATH = path.join(__dirname, process.env.CREDENTIALS_PATH || 'credentials.json');
 
-// =============================================
-// Funciones auxiliares
-// =============================================
-
-/**
- * Guarda los datos en un archivo Excel local
- * @param {Object} datos - Datos a guardar
- */
+// Función para guardar en Excel local
 function guardarEnExcel(datos) {
   console.log('Iniciando guardado en Excel...');
+  console.log('Ruta del archivo Excel:', EXCEL_PATH);
   
   let registros = [];
-  let workbook;
 
   try {
     if (fs.existsSync(EXCEL_PATH)) {
-      workbook = XLSX.readFile(EXCEL_PATH);
+      console.log('Archivo Excel existente encontrado, leyendo datos...');
+      const workbook = XLSX.readFile(EXCEL_PATH);
       const hoja = workbook.Sheets[workbook.SheetNames[0]];
       registros = XLSX.utils.sheet_to_json(hoja);
+      console.log(`Registros existentes cargados: ${registros.length}`);
     } else {
-      workbook = XLSX.utils.book_new();
+      console.log('No existe archivo Excel previo, se creará uno nuevo');
     }
 
     registros.push(datos);
+    console.log('Nuevo registro agregado');
+
     const nuevaHoja = XLSX.utils.json_to_sheet(registros);
+    const nuevoLibro = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(nuevoLibro, nuevaHoja, 'Marcaciones');
     
-    if (workbook.SheetNames.length > 0) {
-      workbook.Sheets[workbook.SheetNames[0]] = nuevaHoja;
-    } else {
-      XLSX.utils.book_append_sheet(workbook, nuevaHoja, 'Marcaciones');
+    console.log('Guardando archivo Excel...');
+    XLSX.writeFile(nuevoLibro, EXCEL_PATH);
+    console.log('Archivo Excel guardado exitosamente');
+    
+    if (!fs.existsSync(EXCEL_PATH)) {
+      throw new Error('El archivo no se guardó correctamente');
     }
     
-    XLSX.writeFile(workbook, EXCEL_PATH);
-    console.log('Excel guardado exitosamente');
+    const stats = fs.statSync(EXCEL_PATH);
+    console.log(`Tamaño del archivo Excel: ${stats.size} bytes`);
+    
   } catch (error) {
     console.error('Error al guardar en Excel:', error);
-    throw error;
+    throw new Error(`Error al guardar en Excel: ${error.message}`);
   }
 }
 
-/**
- * Sube el archivo Excel a Google Drive
- */
-async function subirArchivoAGoogleDrive() {
-  if (!fs.existsSync(EXCEL_PATH)) {
-    throw new Error('El archivo Excel no existe localmente');
+// Función para verificar si la carpeta existe
+async function verificarCarpeta(drive, carpetaId) {
+  try {
+    const response = await drive.files.get({
+      fileId: carpetaId,
+      fields: 'id, name'
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error al verificar la carpeta:', error);
+    throw new Error(`No se puede acceder a la carpeta con ID ${carpetaId}. Verifica que existe y que tienes permisos.`);
+  }
+}
+
+// Función para crear o encontrar carpeta en Drive
+async function crearOEncontrarCarpeta(drive) {
+  console.log('Buscando carpeta "Marcaciones" en Drive...');
+  
+  const busqueda = await drive.files.list({
+    q: "mimeType='application/vnd.google-apps.folder' and name='Marcaciones' and trashed=false",
+    fields: 'files(id, name, webViewLink)',
+    spaces: 'drive'
+  });
+
+  if (busqueda.data.files.length > 0) {
+    const carpeta = busqueda.data.files[0];
+    console.log('Carpeta encontrada:', carpeta.name, 'ID:', carpeta.id);
+    return carpeta;
   }
 
-  console.log('Autenticando con Google Drive...');
+  console.log('Creando nueva carpeta "Marcaciones"...');
+  const fileMetadata = {
+    name: 'Marcaciones',
+    mimeType: 'application/vnd.google-apps.folder'
+  };
+
+  const carpeta = await drive.files.create({
+    resource: fileMetadata,
+    fields: 'id, name, webViewLink'
+  });
+
+  await drive.permissions.create({
+    fileId: carpeta.data.id,
+    requestBody: {
+      role: 'writer',
+      type: 'anyone'
+    }
+  });
+
+  console.log('Nueva carpeta creada con ID:', carpeta.data.id);
+  return carpeta.data;
+}
+
+// Función para subir archivo a Google Drive
+async function subirArchivoAGoogleDrive() {
+  if (!fs.existsSync(EXCEL_PATH)) {
+    throw new Error('El archivo Excel no existe');
+  }
+
+  console.log('Iniciando proceso de subida a Drive...');
+  
   const auth = new google.auth.GoogleAuth({
     keyFile: CREDENTIALS_PATH,
-    scopes: ['https://www.googleapis.com/auth/drive.file']
+    scopes: ['https://www.googleapis.com/auth/drive']
   });
 
   const drive = google.drive({ version: 'v3', auth });
+  
+  // ID del archivo Excel en Drive (reemplaza con el correcto)
+  const EXCEL_DRIVE_ID = '1mNYuHeBH0ODc4m8ajDTdjPBqkDDG7_hR';
+  
+  console.log('Actualizando archivo Excel en Drive...');
+  const media = {
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    body: fs.createReadStream(EXCEL_PATH)
+  };
 
   try {
-    console.log('Buscando archivo existente en Drive...');
-    const respuesta = await drive.files.list({
-      q: `name='marcaciones.xlsx' and '${CARPETA_DRIVE_ID}' in parents`,
-      fields: 'files(id, name)'
-    });
-
-    let archivoId;
-    if (respuesta.data.files.length > 0) {
-      archivoId = respuesta.data.files[0].id;
-      console.log('Archivo existente encontrado, actualizando...');
-    } else {
-      console.log('Creando nuevo archivo en Drive...');
-      const fileMetadata = {
-        name: 'marcaciones.xlsx',
-        parents: [CARPETA_DRIVE_ID]
-      };
-      
-      const media = {
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        body: fs.createReadStream(EXCEL_PATH)
-      };
-
-      const archivo = await drive.files.create({
-        resource: fileMetadata,
-        media,
-        fields: 'id, webViewLink'
-      });
-
-      archivoId = archivo.data.id;
-    }
-
-    // Actualizar el archivo
-    const media = {
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      body: fs.createReadStream(EXCEL_PATH)
-    };
-
-    const archivoActualizado = await drive.files.update({
-      fileId: archivoId,
+    const actualizado = await drive.files.update({
+      fileId: EXCEL_DRIVE_ID,
       media,
       fields: 'id, webViewLink'
     });
 
-    console.log('Archivo actualizado en Drive:', archivoActualizado.data.webViewLink);
+    console.log('Archivo actualizado exitosamente');
     return {
-      mensaje: 'Registro guardado en Google Drive',
-      archivoUrl: archivoActualizado.data.webViewLink
+      archivoUrl: actualizado.data.webViewLink,
+      mensaje: 'Registro guardado exitosamente en el archivo Excel de Google Drive'
     };
   } catch (error) {
-    console.error('Error al interactuar con Google Drive:', error);
-    throw error;
+    console.error('Error al actualizar archivo:', error);
+    throw new Error('No se pudo actualizar el archivo en Drive. Verifica que el ID sea correcto y tengas permisos de edición.');
   }
 }
 
-/**
- * Combina una fecha con la hora actual
- */
+// Función para combinar fecha con hora actual
 function combinarFechaConHoraActual(fecha) {
   if (!fecha) return '';
   
   const ahora = new Date();
-  const fechaObj = new Date(fecha);
+  const fechaSeleccionada = new Date(fecha);
   
-  fechaObj.setHours(ahora.getHours());
-  fechaObj.setMinutes(ahora.getMinutes());
-  fechaObj.setSeconds(ahora.getSeconds());
+  fechaSeleccionada.setHours(ahora.getHours());
+  fechaSeleccionada.setMinutes(ahora.getMinutes());
+  fechaSeleccionada.setSeconds(ahora.getSeconds());
 
-  return fechaObj.toLocaleString('es-ES', {
+  return fechaSeleccionada.toLocaleString('es-ES', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -212,68 +192,59 @@ function combinarFechaConHoraActual(fecha) {
   });
 }
 
-// =============================================
-// Endpoints de la API
-// =============================================
-
-/**
- * Endpoint para registrar una nueva marcación
- */
+// Endpoint para registrar
 app.post('/registrar', async (req, res) => {
   try {
+    console.log('=== Inicio de /registrar ===');
     console.log('Datos recibidos:', req.body);
     
     const { nombre, cedula, agencia, horaEntrada, horaSalida, observaciones } = req.body;
 
-    // Validación de campos obligatorios
     if (!nombre || !cedula || !agencia) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Nombre, cédula y agencia son campos obligatorios' 
+        message: 'Faltan datos obligatorios: nombre, cédula y agencia son requeridos' 
       });
     }
 
-    // Formatear fechas
     const fechaHoraEntrada = horaEntrada ? combinarFechaConHoraActual(horaEntrada) : '';
     const fechaHoraSalida = horaSalida ? combinarFechaConHoraActual(horaSalida) : '';
 
-    const registro = {
+    const datos = {
       nombre,
       cedula,
       agencia,
       horaEntrada: fechaHoraEntrada,
       horaSalida: fechaHoraSalida,
-      observaciones: observaciones || '',
-      fechaRegistro: new Date().toISOString(),
-      ip: req.ip
+      observaciones: observaciones || ''
     };
 
-    // Guardar en Excel local
-    guardarEnExcel(registro);
-    
-    // Subir a Google Drive
+    console.log('Guardando registro:', datos);
+    guardarEnExcel(datos);
     const driveInfo = await subirArchivoAGoogleDrive();
     
     res.json({ 
       success: true,
-      message: 'Registro exitoso',
-      data: registro,
-      driveInfo
+      message: driveInfo.mensaje,
+      data: datos,
+      urls: {
+        archivo: driveInfo.archivoUrl
+      }
     });
   } catch (error) {
-    console.error('Error en endpoint /registrar:', error);
+    console.error('=== Error en /registrar ===');
+    console.error('Mensaje:', error.message);
+    console.error('Stack:', error.stack);
     res.status(500).json({ 
       success: false,
-      message: 'Error al procesar el registro',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Error al guardar el registro: ' + error.message,
+      error: error.stack
     });
   }
 });
 
-/**
- * Endpoint para obtener todos los registros
- */
-app.get('/registros', async (req, res) => {
+// Endpoint para obtener registros
+app.get('/registros', (req, res) => {
   try {
     if (!fs.existsSync(EXCEL_PATH)) {
       return res.json({ success: true, data: [] });
@@ -285,53 +256,15 @@ app.get('/registros', async (req, res) => {
 
     res.json({ success: true, data: registros });
   } catch (error) {
-    console.error('Error en endpoint /registros:', error);
+    console.error('Error al obtener registros:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Error al obtener registros',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: 'Error al obtener los registros' 
     });
   }
 });
 
-/**
- * Endpoint de verificación de salud del servidor
- */
-app.get('/health', (req, res) => {
-  const status = {
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memoryUsage: process.memoryUsage(),
-    environment: process.env.NODE_ENV || 'development',
-    excelFileExists: fs.existsSync(EXCEL_PATH),
-    driveConfig: CARPETA_DRIVE_ID ? 'Configurado' : 'No configurado'
-  };
-
-  res.status(200).json(status);
-});
-
-// =============================================
-// Manejo de errores global
-// =============================================
-
-app.use((err, req, res, next) => {
-  console.error('Error global:', err);
-  res.status(500).json({
-    success: false,
-    message: 'Error interno del servidor',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
-});
-
-// =============================================
-// Iniciar el servidor
-// =============================================
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor escuchando en puerto ${PORT}`);
-  console.log('Orígenes permitidos:', allowedOrigins);
-  console.log('Ruta archivo Excel:', EXCEL_PATH);
-  console.log('ID Carpeta Drive:', CARPETA_DRIVE_ID);
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
