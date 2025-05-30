@@ -18,37 +18,20 @@ if (!fs.existsSync(process.env.CREDENTIALS_PATH || 'credentials.json')) {
 
 const app = express();
 
-// Configuración más permisiva de CORS
-const corsOptions = {
-  origin: '*', // Temporalmente permitimos todas las origenes
-  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  credentials: true,
-  optionsSuccessStatus: 200,
-  preflightContinue: true,
-  maxAge: 86400 // Preflight results are cached for 24 hours
-};
+// Configuración básica de CORS
+app.use(cors());
 
-// Middleware para agregar headers CORS manualmente
+// Middleware para asegurar los headers CORS
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://registro-marcaciones.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Credentials', true);
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
   
-  // Manejar específicamente las solicitudes OPTIONS
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.sendStatus(200);
   }
-  
   next();
 });
-
-app.use(cors(corsOptions));
-
-// Middleware específico para manejar preflight requests
-app.options('*', cors(corsOptions));
 
 app.use(bodyParser.json());
 

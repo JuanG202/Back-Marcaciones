@@ -30,12 +30,8 @@ function enviarFormulario() {
   fetch('https://back-marcaciones.vercel.app/registrar', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Origin': 'https://registro-marcaciones.vercel.app'
+      'Content-Type': 'application/json'
     },
-    mode: 'cors',
-    credentials: 'include',
     body: JSON.stringify(datos)
   })
   .then(response => {
