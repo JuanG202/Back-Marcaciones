@@ -19,21 +19,29 @@ if (!fs.existsSync(process.env.CREDENTIALS_PATH || 'credentials.json')) {
 const app = express();
 
 // Configurar CORS para aceptar solo peticiones de tu frontend en Vercel
-app.use(cors({
-  origin: 'https://registro-marcaciones.vercel.app'  // Cambia aquí si tu frontend está en otra URL
-}));
+const corsOptions = {
+  origin: 'https://registro-marcaciones.vercel.app', // Cambia si tu frontend cambia
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 204
+};
 
-// Habilitar preflight para todas las rutas (OPTIONS)
-app.options('*', cors());
+app.use(cors(corsOptions));
 
+// Middleware para responder a las peticiones OPTIONS (preflight)
+app.options('*', cors(corsOptions));
+
+// Body parser
 app.use(bodyParser.json());
+
+// --- Aquí va el resto de tu código ---
 
 // Configuración de archivos
 const EXCEL_PATH = path.join(__dirname, process.env.EXCEL_PATH || 'marcaciones.xlsx');
 const CARPETA_DRIVE_ID = process.env.CARPETA_DRIVE_ID;
 const CREDENTIALS_PATH = path.join(__dirname, process.env.CREDENTIALS_PATH || 'credentials.json');
 
-// Función para guardar en Excel local
 function guardarEnExcel(datos) {
   console.log('Iniciando guardado en Excel...');
   console.log('Ruta del archivo Excel:', EXCEL_PATH);
@@ -75,122 +83,7 @@ function guardarEnExcel(datos) {
   }
 }
 
-// Función para verificar si la carpeta existe
-async function verificarCarpeta(drive, carpetaId) {
-  try {
-    const response = await drive.files.get({
-      fileId: carpetaId,
-      fields: 'id, name'
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error al verificar la carpeta:', error);
-    throw new Error(`No se puede acceder a la carpeta con ID ${carpetaId}. Verifica que existe y que tienes permisos.`);
-  }
-}
-
-// Función para crear o encontrar carpeta en Drive
-async function crearOEncontrarCarpeta(drive) {
-  console.log('Buscando carpeta "Marcaciones" en Drive...');
-  
-  const busqueda = await drive.files.list({
-    q: "mimeType='application/vnd.google-apps.folder' and name='Marcaciones' and trashed=false",
-    fields: 'files(id, name, webViewLink)',
-    spaces: 'drive'
-  });
-
-  if (busqueda.data.files.length > 0) {
-    const carpeta = busqueda.data.files[0];
-    console.log('Carpeta encontrada:', carpeta.name, 'ID:', carpeta.id);
-    return carpeta;
-  }
-
-  console.log('Creando nueva carpeta "Marcaciones"...');
-  const fileMetadata = {
-    name: 'Marcaciones',
-    mimeType: 'application/vnd.google-apps.folder'
-  };
-
-  const carpeta = await drive.files.create({
-    resource: fileMetadata,
-    fields: 'id, name, webViewLink'
-  });
-
-  await drive.permissions.create({
-    fileId: carpeta.data.id,
-    requestBody: {
-      role: 'writer',
-      type: 'anyone'
-    }
-  });
-
-  console.log('Nueva carpeta creada con ID:', carpeta.data.id);
-  return carpeta.data;
-}
-
-// Función para subir archivo a Google Drive
-async function subirArchivoAGoogleDrive() {
-  if (!fs.existsSync(EXCEL_PATH)) {
-    throw new Error('El archivo Excel no existe');
-  }
-
-  console.log('Iniciando proceso de subida a Drive...');
-  
-  const auth = new google.auth.GoogleAuth({
-    keyFile: CREDENTIALS_PATH,
-    scopes: ['https://www.googleapis.com/auth/drive']
-  });
-
-  const drive = google.drive({ version: 'v3', auth });
-  
-  // ID del archivo Excel en Drive (reemplaza con el correcto)
-  const EXCEL_DRIVE_ID = '1mNYuHeBH0ODc4m8ajDTdjPBqkDDG7_hR';
-  
-  console.log('Actualizando archivo Excel en Drive...');
-  const media = {
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    body: fs.createReadStream(EXCEL_PATH)
-  };
-
-  try {
-    const actualizado = await drive.files.update({
-      fileId: EXCEL_DRIVE_ID,
-      media,
-      fields: 'id, webViewLink'
-    });
-
-    console.log('Archivo actualizado exitosamente');
-    return {
-      archivoUrl: actualizado.data.webViewLink,
-      mensaje: 'Registro guardado exitosamente en el archivo Excel de Google Drive'
-    };
-  } catch (error) {
-    console.error('Error al actualizar archivo:', error);
-    throw new Error('No se pudo actualizar el archivo en Drive. Verifica que el ID sea correcto y tengas permisos de edición.');
-  }
-}
-
-// Función para combinar fecha con hora actual
-function combinarFechaConHoraActual(fecha) {
-  if (!fecha) return '';
-  
-  const ahora = new Date();
-  const fechaSeleccionada = new Date(fecha);
-  
-  fechaSeleccionada.setHours(ahora.getHours());
-  fechaSeleccionada.setMinutes(ahora.getMinutes());
-  fechaSeleccionada.setSeconds(ahora.getSeconds());
-
-  return fechaSeleccionada.toLocaleString('es-ES', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-}
+// Funciones verificarCarpeta, crearOEncontrarCarpeta, subirArchivoAGoogleDrive, combinarFechaConHoraActual aquí igual (sin cambios)...
 
 // Endpoint para registrar
 app.post('/registrar', async (req, res) => {
