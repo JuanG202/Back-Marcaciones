@@ -18,13 +18,19 @@ if (!fs.existsSync(process.env.CREDENTIALS_PATH || 'credentials.json')) {
 
 const app = express();
 
-// Configurar CORS para aceptar solo peticiones de tu frontend en Vercel
-app.use(cors({
-  origin: 'https://registro-marcaciones.vercel.app'  // Cambia aquí si tu frontend está en otra URL
-}));
+// Configuración más detallada de CORS
+const corsOptions = {
+  origin: ['https://registro-marcaciones.vercel.app', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
 
-// Habilitar preflight para todas las rutas (OPTIONS)
-app.options('*', cors());
+app.use(cors(corsOptions));
+
+// Middleware específico para manejar preflight requests
+app.options('*', cors(corsOptions));
 
 app.use(bodyParser.json());
 
