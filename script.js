@@ -1,3 +1,5 @@
+
+
 function enviarFormulario() {
   const nombre = document.getElementById('nombre').value.trim();
   const cedula = document.getElementById('cedula').value.trim();

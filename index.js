@@ -17,7 +17,11 @@ if (!fs.existsSync(process.env.CREDENTIALS_PATH || 'credentials.json')) {
 }
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: 'https://registro-marcaciones.vercel.app',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+}));
 app.use(bodyParser.json());
 
 // Configuración de archivos
